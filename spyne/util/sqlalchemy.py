@@ -68,6 +68,7 @@ from spyne.model.enum import Enum
 from spyne.model.binary import ByteArray
 from spyne.model.complex import Array
 from spyne.model.complex import ComplexModelBase
+from spyne.model.primitive import Mandatory as _Mandatory
 from spyne.model.primitive import AnyXml
 from spyne.model.primitive import Uuid
 from spyne.model.primitive import Date
@@ -733,10 +734,21 @@ def gen_sqla_info(cls, cls_bases=()):
     return table
 
 
-def get_spyne_type(v):
-    """This function maps sqlalchemy types to spyne types."""
+class Mandatory(_Mandatory):
+    AsciiString = _Mandatory.String(type_name='AsciiString', encoding='ascii')
 
-    rpc_type = None
+
+class KeyValue(ComplexModelBase):
+    KEY_TAG_NAME = '{%s}key' % ComplexModelBase.__namespace__
+    VALUE_TAG_NAME = '{%s}value' % ComplexModelBase.__namespace__
+
+    key = Mandatory.Unicode
+    value = Mandatory.Unicode
+
+
+def get_spyne_type(v, optionality=None):
+    """This function maps sqlalchemy types to spyne types."""
+    optionality = optionality or {}
 
     if isinstance(v.type, sqlalchemy.Enum):
         if v.type.convert_unicode:
@@ -745,25 +757,32 @@ def get_spyne_type(v):
             rpc_type = Enum(*v.type.enums, **{'type_name': v.type.name})
 
     elif isinstance(v.type, sqlalchemy.Unicode):
-        rpc_type = Unicode(v.type.length)
+        rpc_type = Unicode(v.type.length, **optionality)
 
     elif isinstance(v.type, sqlalchemy.String):
-        rpc_type = String(v.type.length)
+        rpc_type = String(v.type.length, **optionality)
 
     elif isinstance(v.type, sqlalchemy.UnicodeText):
-        rpc_type = Unicode
+        rpc_type = Unicode(**optionality)
 
     elif isinstance(v.type, sqlalchemy.Text):
-        rpc_type = String
+        rpc_type = String(**optionality)
 
     elif isinstance(v.type, (sqlalchemy.Numeric)):
-        rpc_type = Decimal(v.type.precision, v.type.scale)
+        rpc_type = Decimal(v.type.precision, v.type.scale, **optionality)
+
+    elif isinstance(v.type, sqlalchemy.dialects.postgresql.ARRAY):
+        rpc_type = Array(get_spyne_type(v.type.item_type), **optionality)
+
+    elif isinstance(v.type, sqlalchemy.dialects.postgresql.HSTORE):
+        # TODO(dmu): Make pull request to spyne repo to support HSTORE
+        rpc_type = HStore(KeyValue, **optionality)
 
     elif isinstance(v.type, (PGXml)):
-        rpc_type = AnyXml
+        rpc_type = AnyXml(**optionality)
 
     elif type(v.type) in _sq2sp_type_map:
-        rpc_type = _sq2sp_type_map[type(v.type)]
+        rpc_type = _sq2sp_type_map[type(v.type)](**optionality)
 
     else:
         raise Exception("Spyne type was not found. Probably _sq2sp_type_map "
@@ -772,16 +791,30 @@ def get_spyne_type(v):
     return rpc_type
 
 
+def get_spyne_type_extra(v, optionality=None):
+    """This function maps sqlalchemy types to spyne types.
+    """
+    is_optional = (v.default is not None or v.server_default is not None or v.nullable)
+    _optionality = {
+        'max_occurs': 1,
+        'nillable': v.nullable,
+        'min_occurs': int(not is_optional),
+    }
+    _optionality.update(optionality or {})
+    return get_spyne_type(v.type, _optionality)
+
+
 def gen_spyne_info(cls):
     model = cls.Attributes.sqla_model
     table = cls.Attributes.sqla_table
     # TODO (dmu) HIGH: Refactor to use exclude_properties from mapper
     exclude_attrs = getattr(cls.Attributes, 'exclude_attrs', ())
+    optionality = getattr(cls.Attributes, 'optionality', {})
     _type_info = cls._type_info
 
     for c in table.c:
         if c.name not in exclude_attrs:
-            _type_info[c.name] = get_spyne_type(c)
+            _type_info[c.name] = get_spyne_type(c, optionality.get(c.name, {}))
 
     # Map the table to the object
     if model:
