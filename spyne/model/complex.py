@@ -333,9 +333,18 @@ class ComplexModelMeta(type(ModelBase)):
         if attrs.table_name is None:
             attrs.table_name = table_name
 
+        _cls_model = cls_dict.get('__sqla_model__', None)
+        if attrs.sqla_model is None:
+            attrs.sqla_model = _cls_model
+
         table = cls_dict.get('__table__', None)
         if attrs.sqla_table is None:
             attrs.sqla_table = table
+
+        if attrs.sqla_table is None:
+            # TODO(dmu) LOW: Is there a better check for SQLAlchemy model?
+            if attrs.sqla_model and hasattr(attrs.sqla_model, '__table__'):
+                attrs.sqla_table = attrs.sqla_model.__table__
 
         metadata = cls_dict.get('__metadata__', None)
         if attrs.sqla_metadata is None:
@@ -424,8 +433,12 @@ class ComplexModelBase(ModelBase):
         constructor as. ``**kwargs``.
         """
 
+        sqla_model = None
+        """The sqlalchemy model class already mapped to a table"""
+
         sqla_table = None
-        """The sqlalchemy table object"""
+        """The sqlalchemy table object. By default value is derived from `sqla_model` if
+        it is provided"""
 
         sqla_mapper = None
         """The sqlalchemy mapper object"""

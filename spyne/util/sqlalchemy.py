@@ -54,6 +54,7 @@ from sqlalchemy.ext.compiler import compiles
 
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import mapper
+from sqlalchemy.orm.util import class_mapper
 
 from sqlalchemy.types import UserDefinedType
 
@@ -772,6 +773,7 @@ def get_spyne_type(v):
 
 
 def gen_spyne_info(cls):
+    model = cls.Attributes.sqla_model
     table = cls.Attributes.sqla_table
     _type_info = cls._type_info
 
@@ -779,7 +781,11 @@ def gen_spyne_info(cls):
         _type_info[c.name] = get_spyne_type(c)
 
     # Map the table to the object
-    mapper_args, mapper_kwargs = sanitize_args(cls.Attributes.sqla_mapper_args)
-    cls_mapper = mapper(cls, table, *mapper_args, **mapper_kwargs)
+    if model:
+        # TODO(dmu) LOW: Instantiate new mapper instead of getting existing mapper instanance
+        cls_mapper = class_mapper(model)
+    else:
+        mapper_args, mapper_kwargs = sanitize_args(cls.Attributes.sqla_mapper_args)
+        cls_mapper = mapper(cls, table, *mapper_args, **mapper_kwargs)
     cls.Attributes.table_name = cls.__tablename__ = table.name
     cls.Attributes.sqla_mapper = cls.__mapper__ = cls_mapper
