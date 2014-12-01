@@ -775,10 +775,13 @@ def get_spyne_type(v):
 def gen_spyne_info(cls):
     model = cls.Attributes.sqla_model
     table = cls.Attributes.sqla_table
+    # TODO (dmu) HIGH: Refactor to use exclude_properties from mapper
+    exclude_attrs = getattr(cls.Attributes, 'exclude_attrs', ())
     _type_info = cls._type_info
 
     for c in table.c:
-        _type_info[c.name] = get_spyne_type(c)
+        if c.name not in exclude_attrs:
+            _type_info[c.name] = get_spyne_type(c)
 
     # Map the table to the object
     if model:
